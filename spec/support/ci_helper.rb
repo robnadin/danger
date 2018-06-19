@@ -7,6 +7,14 @@ module Danger
         { "DANGER_GITHUB_API_TOKEN" => "1234567890" * 4 }
       end
 
+      def with_bamboo_setup_and_is_a_pull_request
+        system_env = {
+          "bamboo_buildKey" => "DNGR"
+        }
+
+        yield(system_env)
+      end
+
       def with_bitrise_setup_and_is_a_pull_request
         system_env = {
           "BITRISE_IO" => "true",

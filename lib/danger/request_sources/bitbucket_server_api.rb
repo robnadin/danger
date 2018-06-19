@@ -5,16 +5,18 @@ require "danger/helpers/comments_helper"
 module Danger
   module RequestSources
     class BitbucketServerAPI
-      attr_accessor :host, :pr_api_endpoint
+      attr_accessor :host, :project, :slug, :pull_request_id
 
-      def initialize(project, slug, pull_request_id, environment)
+      def initialize(project, slug, pull_request_id, branch_name=nil, environment)
         @username = environment["DANGER_BITBUCKETSERVER_USERNAME"]
         @password = environment["DANGER_BITBUCKETSERVER_PASSWORD"]
         self.host = environment["DANGER_BITBUCKETSERVER_HOST"]
+        self.project = project
+        self.slug = slug
         if self.host && !(self.host.include? "http://") && !(self.host.include? "https://")
           self.host = "https://" + self.host
         end
-        self.pr_api_endpoint = "#{host}/rest/api/1.0/projects/#{project}/repos/#{slug}/pull-requests/#{pull_request_id}"
+        self.pull_request_id = pull_request_id || fetch_pr_from_branch(branch_name)
       end
 
       def inspect
@@ -54,14 +56,33 @@ module Danger
 
       private
 
+      def base_url
+        "#{host}/rest/api/1.0/projects/#{project}/repos/#{slug}/pull-requests"
+      end
+
+      def pr_api_endpoint
+        "#{base_url}/#{pull_request_id}"
+      end
+
+      def prs_api_endpoint(branch_name)
+        "#{base_url}?direction=outgoing&at=refs/heads/#{branch_name}"
+      end
+
+      def fetch_pr_from_branch(branch_name)
+        uri = URI(URI.escape(prs_api_endpoint(branch_name)))
+        fetch_json(uri)[:values][0][:id]
+      end
+
       def use_ssl
-        return self.pr_api_endpoint.include? "https://"
+        return pr_api_endpoint.include? "https://"
       end
 
       def fetch_json(uri)
         req = Net::HTTP::Get.new(uri.request_uri, { "Content-Type" => "application/json" })
         req.basic_auth @username, @password
-        res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: use_ssl) do |http|
+        http_session = Net::HTTP.new(uri.hostname, uri.port)
+        http_session.use_ssl = use_ssl
+        res = http_session.start do |http|
           http.request(req)
         end
         JSON.parse(res.body, symbolize_names: true)
